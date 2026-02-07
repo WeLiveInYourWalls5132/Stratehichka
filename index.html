@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexagon Strategy MVP</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Outfit:wght@500;800&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <!-- Main Menu Overlay -->
+        <div id="main-menu" class="menu-overlay">
+            <div class="menu-content">
+                <h1 class="menu-title">HEXAGON STRATEGY</h1>
+                <p class="menu-subtitle">Захоплюйте території, перемагайте ШІ та станьте володарем світу!</p>
+                <div class="menu-actions">
+                    <button id="btn-start-game" class="btn btn-primary btn-large">Почати гру</button>
+                </div>
+                <div class="menu-footer">
+                    <p>Версія 1.1 - Hex Grid Refined</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="game-over" class="menu-overlay hidden">
+            <div class="menu-content">
+                <h1 id="game-over-title" class="menu-title">КІНЕЦЬ ГРИ</h1>
+                <p id="game-over-message" class="menu-subtitle">Гра завершена.</p>
+                <div class="menu-actions">
+                    <button id="btn-restart" class="btn btn-primary btn-large">Грати знову</button>
+                </div>
+            </div>
+        </div>
+
+        <header class="app-header">
+            <div class="stats">
+                <div class="stat-item">Хід: <span id="turn-count">1</span></div>
+                <div class="stat-item">Гравці: <span id="player-territories">0</span> | ШІ: <span
+                        id="ai-territories">0</span></div>
+            </div>
+            <div class="reinforcements" id="reinforcement-panel">
+                Доступно військ: <span id="reinforcement-count">0</span>
+            </div>
+        </header>
+
+        <main class="game-container">
+            <canvas id="game-canvas"></canvas>
+
+            <!-- Troop Selection Dialog (Top-Left) -->
+            <div id="troop-dialog" class="troop-dialog hidden">
+                <h3>Виберіть кількість військ</h3>
+                <div class="dialog-info">
+                    <p>Переміщення: <span id="dialog-source">-</span> → <span id="dialog-target">-</span></p>
+                    <p>Доступно: <span id="dialog-available">0</span> військ</p>
+                </div>
+                <div class="slider-container">
+                    <input type="range" id="troop-slider" min="1" max="10" value="1" />
+                    <div class="slider-value">Кількість: <span id="slider-display">1</span></div>
+                </div>
+                <div class="dialog-actions">
+                    <button id="btn-confirm-move" class="btn btn-primary">Перемістити</button>
+                    <button id="btn-cancel-move" class="btn btn-secondary">Скасувати</button>
+                </div>
+            </div>
+
+            <div id="ui-overlay" class="ui-overlay">
+                <div id="selection-info" class="panel hidden">
+                    <h3 id="territory-name">Територія</h3>
+                    <p>Війська: <span id="army-count">0</span></p>
+                    <div class="actions">
+                        <button id="btn-attack" class="btn btn-danger hidden">Атакувати</button>
+                        <button id="btn-move" class="btn btn-primary hidden">Перемістити</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="app-controls">
+            <div id="game-log" class="log-container">
+                <div class="log-entry">Ласкаво просимо до Hexagon Strategy!</div>
+            </div>
+            <div class="main-actions">
+                <button id="btn-end-turn" class="btn btn-warning">Завершити хід</button>
+                <button id="btn-new-game" class="btn btn-secondary">Нова гра</button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Portable Bundle -->
+    <script src="game.js"></script>
+</body>
+
+</html>
