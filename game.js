@@ -210,42 +210,120 @@ class GameEngine {
 }
 
 // --- AI ---
+/**
+ * Human-Like AI - поводиться більш природньо та непередбачувано
+ * 
+ * Ключові особливості:
+ * - Персональність (агресія, ризикованість, терплячість)
+ * - Пам'ять про дії гравця
+ * - Імітація помилок та "сліпих плям"  
+ * - Перемикання між стратегіями
+ * - Варіативні затримки "роздумів"
+ */
 class SimpleAI {
-    constructor(engine) { this.engine = engine; }
+    constructor(engine) {
+        this.engine = engine;
+
+        // Унікальна персональність для кожної гри
+        this.personality = {
+            aggression: 0.3 + Math.random() * 0.5,      // 0.3-0.8: схильність атакувати
+            riskTolerance: 0.2 + Math.random() * 0.5,   // 0.2-0.7: готовність до ризику
+            patience: Math.random() > 0.4,              // чекати підсилень чи атакувати відразу
+            focusLevel: 0.7 + Math.random() * 0.25      // 0.7-0.95: шанс помітити найкращий хід
+        };
+
+        // Пам'ять про гру
+        this.memory = {
+            playerLastAttackedFrom: null,    // звідки гравець атакував
+            threatenedTerritories: [],       // наші території під загрозою
+            turnsWithoutPlayerAttack: 0,     // скільки ходів гравець не атакував
+            totalTurns: 0                    // загальна кількість ходів
+        };
+
+        // Поточна стратегія: 'expand', 'defend', 'aggress'
+        this.currentStrategy = 'expand';
+
+        this.engine.log(`ШІ: ${this.personality.patience ? 'терплячий' : 'імпульсивний'} стиль`);
+    }
 
     /**
-     * Executes the AI turn logic.
-     * Uses an iterative approach to perform multiple actions if beneficial.
+     * Головний метод ходу AI
      */
     async playTurn() {
         if (this.engine.state.currentPlayer !== 'ai' || this.engine.state.status !== 'ongoing') return;
 
-        await this.delay(1000);
+        this.memory.totalTurns++;
+
+        // "Думаємо" перед ходом (людська пауза)
+        await this.thinkingDelay('start');
+
+        // Оновлюємо стратегію на основі ситуації
+        this.updateStrategy();
 
         // --- 1. Reinforcement Phase ---
         await this.handleReinforcements();
 
-        // --- 2. Action Phase (Attack & Move) ---
+        // --- 2. Action Phase ---
         let actionsTaken = 0;
-        let maxActions = 20;
+        const maxActions = this.personality.patience ? 15 : 25; // Терплячий AI робить менше дій
         let lastActionCount = -1;
+
+        // Іноді AI "втомлюється" і робить менше дій
+        const fatigueChance = Math.min(0.3, this.memory.totalTurns * 0.02);
+        const isTired = Math.random() < fatigueChance;
 
         while (actionsTaken < maxActions && actionsTaken !== lastActionCount && this.engine.state.status === 'ongoing') {
             lastActionCount = actionsTaken;
 
+            // Якщо "втомився" - шанс пропустити дію
+            if (isTired && actionsTaken > 3 && Math.random() < 0.3) {
+                break;
+            }
+
             const actionSucceeded = await this.performBestAction();
             if (actionSucceeded) {
                 actionsTaken++;
-                await this.delay(600);
+                await this.thinkingDelay('action');
             }
         }
 
-        await this.delay(400);
+        await this.thinkingDelay('end');
         if (this.engine.state.status === 'ongoing') this.engine.nextTurn();
     }
 
     /**
-     * Strategic reinforcement: prioritize border territories with the player
+     * Оновлює стратегію на основі поточної ситуації
+     */
+    updateStrategy() {
+        const state = this.engine.state;
+        const myTerrs = state.territories.filter(t => t.owner === 'ai');
+        const playerTerrs = state.territories.filter(t => t.owner === 'player');
+        const neutralTerrs = state.territories.filter(t => t.owner === 'neutral');
+
+        const myStrength = myTerrs.reduce((sum, t) => sum + t.units, 0);
+        const playerStrength = playerTerrs.reduce((sum, t) => sum + t.units, 0);
+
+        // Визначаємо стратегію
+        if (neutralTerrs.length > 3 && this.memory.totalTurns < 5) {
+            // Початок гри - експансія
+            this.currentStrategy = 'expand';
+        } else if (myStrength < playerStrength * 0.7) {
+            // Ми слабші - оборона
+            this.currentStrategy = 'defend';
+        } else if (myStrength > playerStrength * 1.3 || Math.random() < this.personality.aggression * 0.5) {
+            // Ми сильніші або агресивний AI - атака
+            this.currentStrategy = 'aggress';
+        } else {
+            // Збалансована ситуація - випадковий вибір з нахилом
+            const roll = Math.random();
+            if (roll < 0.4) this.currentStrategy = 'expand';
+            else if (roll < 0.7) this.currentStrategy = 'defend';
+            else this.currentStrategy = 'aggress';
+        }
+    }
+
+    /**
+     * Розміщення підсилень з урахуванням стратегії та "помилок"
      */
     async handleReinforcements() {
         while (this.engine.state.reinforcementsAvailable > 0) {
@@ -258,30 +336,62 @@ class SimpleAI {
                 const neutralNeighbors = neighbors.filter(n => n.owner === 'neutral');
 
                 let score = 0;
-                // HEAVY priority on borders with player
-                if (playerNeighbors.length > 0) {
-                    const playerArmyAtBorder = playerNeighbors.reduce((sum, n) => sum + n.units, 0);
-                    // Reinforce if player is strong at border or we are weak
-                    score = 30 + (playerArmyAtBorder / (t.units + 1)) * 20;
-                    if (t.units < 3) score += 50; // Critical reinforcement
-                } else if (neutralNeighbors.length > 0) {
-                    score = 10 + neutralNeighbors.length;
+
+                // Базовий скор залежить від стратегії
+                if (this.currentStrategy === 'defend') {
+                    // Оборона: пріоритет на кордони з гравцем
+                    if (playerNeighbors.length > 0) {
+                        const threat = playerNeighbors.reduce((sum, n) => sum + n.units, 0);
+                        score = 50 + threat * 2 - t.units;
+                        // Особливий пріоритет якщо гравець атакував звідси
+                        if (this.memory.playerLastAttackedFrom &&
+                            playerNeighbors.some(n => n.id === this.memory.playerLastAttackedFrom)) {
+                            score += 30;
+                        }
+                    }
+                } else if (this.currentStrategy === 'aggress') {
+                    // Агресія: підсилюємо для атаки на гравця
+                    if (playerNeighbors.length > 0) {
+                        const weakest = Math.min(...playerNeighbors.map(n => n.units));
+                        score = 40 + (t.units - weakest) * 3;
+                    }
                 } else {
-                    score = 1;
+                    // Експансія: пріоритет на нейтральні
+                    if (neutralNeighbors.length > 0) {
+                        score = 30 + neutralNeighbors.length * 10;
+                    } else if (playerNeighbors.length > 0) {
+                        score = 20;
+                    }
                 }
 
-                return { id: t.id, score };
+                // Критичне підсилення слабких кордонів
+                if (t.units < 3 && playerNeighbors.length > 0) {
+                    score += 40;
+                }
+
+                return { id: t.id, score, territory: t };
             }).sort((a, b) => b.score - a.score);
 
-            const topCount = Math.min(2, scoredTerrs.length);
-            const targetIndex = Math.floor(Math.random() * topCount);
-            const targetId = scoredTerrs[targetIndex].id;
+            // Симуляція "помилки" - іноді вибираємо не найкращий варіант
+            let targetIndex = 0;
+            if (Math.random() > this.personality.focusLevel && scoredTerrs.length > 1) {
+                // "Пропустили" найкращий варіант
+                targetIndex = Math.min(Math.floor(Math.random() * 3), scoredTerrs.length - 1);
+            } else {
+                // Невелика варіативність навіть при "фокусі"
+                const topCount = Math.min(2, scoredTerrs.length);
+                targetIndex = Math.floor(Math.random() * topCount);
+            }
 
+            const targetId = scoredTerrs[targetIndex].id;
             this.engine.selectTerritory(targetId);
-            await this.delay(200);
+            await this.thinkingDelay('reinforce');
         }
     }
 
+    /**
+     * Виконує найкращу дію (атака або переміщення)
+     */
     async performBestAction() {
         const myTerrs = this.engine.state.territories.filter(t => t.owner === 'ai');
         const attacks = [];
@@ -293,53 +403,134 @@ class SimpleAI {
             if (source.units > 1) {
                 neighbors.filter(n => n.owner !== 'ai').forEach(target => {
                     let score = 0;
+                    const advantage = source.units - target.units;
+
                     if (target.owner === 'player') {
-                        // Elite aggression: attack player if we have advantage
-                        if (source.units > target.units) {
-                            score = 40 + (source.units - target.units) * 3;
-                        } else if (source.units > 5 && Math.random() < 0.2) {
-                            score = 15; // Calculated risk
+                        // Атака на гравця
+                        if (this.currentStrategy === 'aggress') {
+                            // Агресивна стратегія - атакуємо частіше
+                            if (advantage > 0) {
+                                score = 50 + advantage * 4;
+                            } else if (advantage > -2 && Math.random() < this.personality.riskTolerance) {
+                                score = 20; // Ризикована атака
+                            }
+                        } else if (this.currentStrategy === 'defend') {
+                            // Оборонна стратегія - атакуємо тільки з великою перевагою
+                            if (advantage >= 3) {
+                                score = 30 + advantage * 2;
+                            }
+                        } else {
+                            // Стандартна логіка
+                            if (advantage > 0) {
+                                score = 35 + advantage * 3;
+                            } else if (source.units > 5 && Math.random() < this.personality.riskTolerance * 0.5) {
+                                score = 15;
+                            }
                         }
                     } else if (target.owner === 'neutral') {
-                        score = 20 + (source.units - target.units);
+                        // Атака на нейтральних
+                        if (this.currentStrategy === 'expand') {
+                            score = 40 + advantage * 2;
+                        } else {
+                            score = 20 + advantage;
+                        }
                     }
+
                     if (score > 0) attacks.push({ source, target, score });
                 });
             }
 
+            // Переміщення військ з тилу на фронт
             if (source.units > 3) {
                 const isInternal = neighbors.every(n => n.owner === 'ai');
                 if (isInternal) {
                     neighbors.forEach(target => {
                         const targetNeighbors = target.neighbors.map(id => this.engine.state.territories.find(n => n.id === id));
-                        const targetIsBorder = targetNeighbors.some(n => n.owner !== 'ai');
+                        const targetHasPlayerNeighbor = targetNeighbors.some(n => n.owner === 'player');
+                        const targetHasNeutralNeighbor = targetNeighbors.some(n => n.owner === 'neutral');
 
-                        let mScore = targetIsBorder ? 20 : 1;
+                        let mScore = 0;
+                        if (targetHasPlayerNeighbor) {
+                            mScore = this.currentStrategy === 'defend' ? 30 : 20;
+                        } else if (targetHasNeutralNeighbor && this.currentStrategy === 'expand') {
+                            mScore = 25;
+                        } else {
+                            mScore = 1;
+                        }
                         moves.push({ source, target, score: mScore });
                     });
                 }
             }
         }
 
+        // Сортуємо атаки
         attacks.sort((a, b) => b.score - a.score);
+
+        // Симуляція "помилки" - шанс пропустити найкращу атаку
         if (attacks.length > 0) {
-            const best = attacks[0];
-            this.engine.selectTerritory(best.source.id);
-            this.engine.selectTerritory(best.target.id);
-            return true;
+            let attackIndex = 0;
+            if (Math.random() > this.personality.focusLevel && attacks.length > 1) {
+                attackIndex = Math.min(Math.floor(Math.random() * 3), attacks.length - 1);
+            }
+
+            const chosen = attacks[attackIndex];
+
+            // Ще один шанс "передумати" для оборонного AI
+            if (this.currentStrategy === 'defend' && Math.random() < 0.2) {
+                // Пропускаємо атаку
+            } else {
+                this.engine.selectTerritory(chosen.source.id);
+                this.engine.selectTerritory(chosen.target.id);
+                return true;
+            }
         }
 
+        // Переміщення
         moves.sort((a, b) => b.score - a.score);
         if (moves.length > 0) {
             const best = moves[0];
-            const toMove = Math.floor(best.source.units * 0.8);
-            if (toMove > 0) {
+            // Варіативність у кількості переміщених військ
+            const movePercent = 0.5 + Math.random() * 0.4; // 50-90%
+            const toMove = Math.floor(best.source.units * movePercent);
+            if (toMove > 0 && toMove < best.source.units) {
                 this.engine.move(best.source, best.target, toMove);
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Людські затримки "роздумів"
+     */
+    thinkingDelay(type) {
+        let base, variance;
+
+        switch (type) {
+            case 'start':
+                base = 800; variance = 400;
+                break;
+            case 'action':
+                base = 400; variance = 300;
+                break;
+            case 'reinforce':
+                base = 150; variance = 100;
+                break;
+            case 'end':
+                base = 300; variance = 200;
+                break;
+            default:
+                base = 300; variance = 100;
+        }
+
+        // Терплячий AI думає довше
+        if (this.personality.patience) {
+            base *= 1.3;
+        }
+
+        const delay = base + Math.random() * variance;
+        return new Promise(r => setTimeout(r, delay));
     }
 
     delay(ms) { return new Promise(r => setTimeout(r, ms)); }
