@@ -26,6 +26,125 @@ const CONFIG = {
     }
 };
 
+// --- PARTICLE SYSTEM ---
+class Particle {
+    constructor(x, y, vx, vy, color, life, size, type = 'circle') {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.color = color;
+        this.life = life;
+        this.maxLife = life;
+        this.size = size;
+        this.type = type;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotationSpeed = (Math.random() - 0.5) * 0.2;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.15; // gravity
+        this.vx *= 0.98; // air resistance
+        this.rotation += this.rotationSpeed;
+        this.life--;
+    }
+
+    draw(ctx) {
+        const alpha = this.life / this.maxLife;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = this.color;
+
+        if (this.type === 'square') {
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(this.rotation);
+            ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+            ctx.restore();
+        } else {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    isAlive() {
+        return this.life > 0;
+    }
+}
+
+class ParticleEngine {
+    constructor() {
+        this.particles = [];
+    }
+
+    createExplosion(x, y, color, count = 30) {
+        for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count;
+            const speed = 2 + Math.random() * 3;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            const size = 2 + Math.random() * 3;
+            const life = 30 + Math.random() * 20;
+            this.particles.push(new Particle(x, y, vx, vy, color, life, size));
+        }
+    }
+
+    createTrail(x, y, color, count = 5) {
+        for (let i = 0; i < count; i++) {
+            const vx = (Math.random() - 0.5) * 2;
+            const vy = (Math.random() - 0.5) * 2;
+            const size = 2 + Math.random() * 2;
+            const life = 15 + Math.random() * 10;
+            this.particles.push(new Particle(x, y, vx, vy, color, life, size));
+        }
+    }
+
+    createVictoryConfetti(x, y, count = 100) {
+        const colors = ['#00d2ff', '#ff416c', '#f1c40f', '#fff', '#00ff88'];
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 3 + Math.random() * 5;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed - 5; // upward bias
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            const size = 3 + Math.random() * 4;
+            const life = 60 + Math.random() * 40;
+            const type = Math.random() > 0.5 ? 'circle' : 'square';
+            this.particles.push(new Particle(x, y, vx, vy, color, life, size, type));
+        }
+    }
+
+    createSparkles(x, y, color, count = 10) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 2;
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            const size = 1 + Math.random() * 2;
+            const life = 20 + Math.random() * 15;
+            this.particles.push(new Particle(x, y, vx, vy, color, life, size));
+        }
+    }
+
+    update() {
+        this.particles = this.particles.filter(p => {
+            p.update();
+            return p.isAlive();
+        });
+    }
+
+    draw(ctx) {
+        this.particles.forEach(p => p.draw(ctx));
+        ctx.globalAlpha = 1;
+    }
+
+    clear() {
+        this.particles = [];
+    }
+}
+
 // --- UTILS ---
 class HexMath {
     static axialToPixel(q, r, size) {
@@ -72,13 +191,38 @@ class MapGenerator {
 
 // --- ENGINE ---
 class GameEngine {
-    constructor() {
+    constructor(difficulty = 'normal') {
         this.state = {
             turn: 1, currentPlayer: 'player', phase: 'reinforce',
             territories: [], selectedId: null, reinforcementsAvailable: 0,
             animations: [],
             logs: ["Гра почалася! Гравці займають позиції."],
-            status: 'ongoing'
+            status: 'ongoing',
+            difficulty: difficulty,
+            statistics: {
+                player: {
+                    attacks: 0,
+                    successfulAttacks: 0,
+                    territoriesConquered: 0,
+                    territoriesLost: 0,
+                    largestArmy: 0,
+                    totalUnitsDeployed: 0
+                },
+                ai: {
+                    attacks: 0,
+                    successfulAttacks: 0,
+                    territoriesConquered: 0,
+                    territoriesLost: 0,
+                    largestArmy: 0,
+                    totalUnitsDeployed: 0
+                },
+                game: {
+                    totalTurns: 0,
+                    startTime: Date.now(),
+                    endTime: null
+                }
+            },
+            moveHistory: []
         };
         this.init();
     }
@@ -124,33 +268,77 @@ class GameEngine {
         }
     }
     attack(source, target) {
-        // Attack Animation
+        // Track statistics
+        const attacker = source.owner;
+        this.state.statistics[attacker].attacks++;
+
+        // Attack Animation with attacker color
         this.state.animations.push({
             type: 'attack',
             from: { x: source.x, y: source.y },
             to: { x: target.x, y: target.y },
             duration: 30, // frames
-            life: 30
+            life: 30,
+            attacker: attacker // Store who is attacking
         });
 
         const attackRoll = Math.floor(Math.random() * 6) + 1;
         const defenseRoll = Math.floor(Math.random() * 6) + 1;
+        const previousOwner = target.owner;
 
         target.flash = 1; // Flash regardless of outcome
 
         if (attackRoll > defenseRoll) {
             target.units--;
             if (target.units <= 0) {
+                // Successful conquest
+                this.state.statistics[attacker].successfulAttacks++;
+                this.state.statistics[attacker].territoriesConquered++;
+                if (previousOwner !== 'neutral') {
+                    this.state.statistics[previousOwner].territoriesLost++;
+                }
+
                 target.owner = source.owner;
                 target.units = source.units - 1;
                 source.units = 1;
-                this.log(`Перемога на терит. ${target.id}!`);
+
+                // Add to move history
+                this.addToHistory({
+                    type: 'conquest',
+                    player: attacker,
+                    source: source.id,
+                    target: target.id,
+                    turn: this.state.turn
+                });
+
+                this.log(`${attacker === 'player' ? 'Гравець' : 'ШІ'}: Перемога на терит. ${target.id}!`);
                 this.checkWinCondition();
+            } else {
+                // Partial success
+                this.addToHistory({
+                    type: 'attack',
+                    player: attacker,
+                    source: source.id,
+                    target: target.id,
+                    result: 'damage',
+                    turn: this.state.turn
+                });
             }
         } else {
             source.units--;
             source.flash = 1;
-            this.log(`Атака на ${target.id} відбита!`);
+
+            // Add to move history
+            this.addToHistory({
+                type: 'attack',
+                player: attacker,
+                source: source.id,
+                target: target.id,
+                result: 'failed',
+                turn: this.state.turn
+            });
+
+            this.log(`${attacker === 'player' ? 'Гравець' : 'ШІ'}: Атака на ${target.id} відбита!`);
         }
     }
 
@@ -189,7 +377,18 @@ class GameEngine {
         if (toMove > 0 && toMove < source.units) {
             target.units += toMove;
             source.units -= toMove;
-            this.log(`Переміщено ${toMove} військ до терит. ${target.id}`);
+
+            // Add to move history
+            this.addToHistory({
+                type: 'move',
+                player: this.state.currentPlayer,
+                source: source.id,
+                target: target.id,
+                units: toMove,
+                turn: this.state.turn
+            });
+
+            this.log(`${this.state.currentPlayer === 'player' ? 'Гравець' : 'ШІ'}: Переміщено ${toMove} військ до терит. ${target.id}`);
         } else {
             this.log(`Помилка: неможливо перемістити ${toMove} військ`);
         }
@@ -204,12 +403,67 @@ class GameEngine {
         this.log(`Хід ${this.state.turn}: Черга ${this.state.currentPlayer === 'player' ? 'Гравця' : 'ШІ'}`);
     }
     log(msg) {
-        this.state.logs.unshift(msg);
-        if (this.state.logs.length > 5) this.state.logs.pop();
+        this.state.logs.push(msg);
+        if (this.state.logs.length > 50) this.state.logs.shift();
+    }
+
+    addToHistory(move) {
+        this.state.moveHistory.push(move);
+        if (this.state.moveHistory.length > 50) this.state.moveHistory.shift();
+    }
+
+    updateStatistics() {
+        // Update largest army for both players
+        const playerTerrs = this.state.territories.filter(t => t.owner === 'player');
+        const aiTerrs = this.state.territories.filter(t => t.owner === 'ai');
+
+        if (playerTerrs.length > 0) {
+            const maxPlayerArmy = Math.max(...playerTerrs.map(t => t.units));
+            this.state.statistics.player.largestArmy = Math.max(this.state.statistics.player.largestArmy, maxPlayerArmy);
+        }
+
+        if (aiTerrs.length > 0) {
+            const maxAiArmy = Math.max(...aiTerrs.map(t => t.units));
+            this.state.statistics.ai.largestArmy = Math.max(this.state.statistics.ai.largestArmy, maxAiArmy);
+        }
     }
 }
 
 // --- AI ---
+/**
+ * Difficulty Presets
+ */
+const DIFFICULTY_PRESETS = {
+    easy: {
+        aggression: 0.2,
+        riskTolerance: 0.1,
+        focusLevel: 0.5,
+        patience: true,
+        thinkingMultiplier: 1.5
+    },
+    normal: {
+        aggression: 0.4,
+        riskTolerance: 0.35,
+        focusLevel: 0.75,
+        patience: Math.random() > 0.4,
+        thinkingMultiplier: 1.0
+    },
+    hard: {
+        aggression: 0.6,
+        riskTolerance: 0.5,
+        focusLevel: 0.9,
+        patience: false,
+        thinkingMultiplier: 0.7
+    },
+    expert: {
+        aggression: 0.75,
+        riskTolerance: 0.65,
+        focusLevel: 0.995,
+        patience: false,
+        thinkingMultiplier: 0.3
+    }
+};
+
 /**
  * Human-Like AI - поводиться більш природньо та непередбачувано
  * 
@@ -221,16 +475,31 @@ class GameEngine {
  * - Варіативні затримки "роздумів"
  */
 class SimpleAI {
-    constructor(engine) {
+    constructor(engine, difficulty = 'normal') {
         this.engine = engine;
+        this.difficulty = difficulty;
 
-        // Унікальна персональність для кожної гри
-        this.personality = {
-            aggression: 0.3 + Math.random() * 0.5,      // 0.3-0.8: схильність атакувати
-            riskTolerance: 0.2 + Math.random() * 0.5,   // 0.2-0.7: готовність до ризику
-            patience: Math.random() > 0.4,              // чекати підсилень чи атакувати відразу
-            focusLevel: 0.7 + Math.random() * 0.25      // 0.7-0.95: шанс помітити найкращий хід
-        };
+        // Використовуємо пресет або створюємо випадкову персональність
+        const preset = DIFFICULTY_PRESETS[difficulty];
+
+        if (preset) {
+            this.personality = {
+                aggression: preset.aggression + (Math.random() - 0.5) * 0.1,
+                riskTolerance: preset.riskTolerance + (Math.random() - 0.5) * 0.1,
+                focusLevel: preset.focusLevel,
+                patience: preset.patience,
+                thinkingMultiplier: preset.thinkingMultiplier
+            };
+        } else {
+            // Fallback to random personality
+            this.personality = {
+                aggression: 0.3 + Math.random() * 0.5,
+                riskTolerance: 0.2 + Math.random() * 0.5,
+                patience: Math.random() > 0.4,
+                focusLevel: 0.7 + Math.random() * 0.25,
+                thinkingMultiplier: 1.0
+            };
+        }
 
         // Пам'ять про гру
         this.memory = {
@@ -266,16 +535,15 @@ class SimpleAI {
         // --- 2. Action Phase ---
         let actionsTaken = 0;
         const maxActions = this.personality.patience ? 15 : 25; // Терплячий AI робить менше дій
-        let lastActionCount = -1;
+        let consecutiveFailures = 0; // Лічильник невдалих спроб
+        const maxConsecutiveFailures = 3; // Максимум невдалих спроб підряд
 
-        // Іноді AI "втомлюється" і робить менше дій
-        const fatigueChance = Math.min(0.3, this.memory.totalTurns * 0.02);
+        // Іноді AI "втомлюється" і робить менше дій (але не на експерті)
+        const fatigueChance = this.difficulty === 'expert' ? 0 : Math.min(0.3, this.memory.totalTurns * 0.02);
         const isTired = Math.random() < fatigueChance;
 
-        while (actionsTaken < maxActions && actionsTaken !== lastActionCount && this.engine.state.status === 'ongoing') {
-            lastActionCount = actionsTaken;
-
-            // Якщо "втомився" - шанс пропустити дію
+        while (actionsTaken < maxActions && consecutiveFailures < maxConsecutiveFailures && this.engine.state.status === 'ongoing') {
+            // Якщо "втомився" - шанс пропустити дію (експерт ніколи не втомлюється)
             if (isTired && actionsTaken > 3 && Math.random() < 0.3) {
                 break;
             }
@@ -283,7 +551,10 @@ class SimpleAI {
             const actionSucceeded = await this.performBestAction();
             if (actionSucceeded) {
                 actionsTaken++;
+                consecutiveFailures = 0; // Скидаємо лічильник при успіху
                 await this.thinkingDelay('action');
+            } else {
+                consecutiveFailures++; // Збільшуємо лічильник при невдачі
             }
         }
 
@@ -413,6 +684,8 @@ class SimpleAI {
                                 score = 50 + advantage * 4;
                             } else if (advantage > -2 && Math.random() < this.personality.riskTolerance) {
                                 score = 20; // Ризикована атака
+                            } else if (this.difficulty === 'expert' && advantage > -3 && source.units > 3) {
+                                score = 15; // Експерт атакує навіть з невеликою перевагою
                             }
                         } else if (this.currentStrategy === 'defend') {
                             // Оборонна стратегія - атакуємо тільки з великою перевагою
@@ -524,10 +797,8 @@ class SimpleAI {
                 base = 300; variance = 100;
         }
 
-        // Терплячий AI думає довше
-        if (this.personality.patience) {
-            base *= 1.3;
-        }
+        // Apply difficulty multiplier
+        base *= this.personality.thinkingMultiplier;
 
         const delay = base + Math.random() * variance;
         return new Promise(r => setTimeout(r, delay));
@@ -542,6 +813,16 @@ class Renderer {
         this.canvas = canvas; this.ctx = ctx;
         this.camera = { x: 0, y: 0, scale: 1 };
         this.time = 0;
+        this.particleEngine = new ParticleEngine();
+    }
+    getDifficultyName(difficulty) {
+        const names = {
+            'easy': 'Легко',
+            'normal': 'Нормально',
+            'hard': 'Важко',
+            'expert': 'Експерт'
+        };
+        return names[difficulty] || 'Нормально';
     }
     updateCamera() {
         this.camera.x = this.canvas.width / 2;
@@ -561,7 +842,12 @@ class Renderer {
         // Draw Animations
         this.drawAnimations(state);
 
+        // Update and draw particles
+        this.particleEngine.update();
+        this.particleEngine.draw(this.ctx);
+
         this.ctx.restore();
+        this.lastStatePlayer = state.currentPlayer; // Store for drawHex
         this.updateDOM(state);
     }
     drawHex(t, isSelected) {
@@ -587,7 +873,11 @@ class Renderer {
         if (t.owner === 'ai') baseColor = CONFIG.COLORS.AI;
 
         this.ctx.fillStyle = baseColor;
-        this.ctx.globalAlpha = 0.8 + (t.flash * 0.2);
+
+        // Darken inactive side
+        const isActive = (t.owner === 'neutral' || t.owner === this.lastStatePlayer);
+        this.ctx.globalAlpha = isActive ? (0.8 + (t.flash * 0.2)) : 0.3;
+
         this.ctx.fill();
 
         // Flash Effect logic
@@ -638,12 +928,28 @@ class Renderer {
     }
 
     drawAnimations(state) {
-        state.animations = state.animations.filter(anim => anim.life > 0);
+        state.animations = state.animations.filter(anim => {
+            // Trigger particles at the start of animations
+            if (anim.life === anim.duration) {
+                if (anim.type === 'attack') {
+                    // Use attacker's color for explosion
+                    const attackColor = anim.attacker === 'player' ? CONFIG.COLORS.PLAYER : CONFIG.COLORS.AI;
+                    this.particleEngine.createExplosion(anim.to.x, anim.to.y, attackColor, 25);
+                } else if (anim.type === 'move') {
+                    this.particleEngine.createTrail(anim.from.x, anim.from.y, '#00d2ff', 8);
+                }
+            }
+            return anim.life > 0;
+        });
+
         state.animations.forEach(anim => {
             const progress = 1 - (anim.life / anim.duration);
             if (anim.type === 'attack') {
+                // Use attacker's color for attack line and particle
+                const attackColor = anim.attacker === 'player' ? CONFIG.COLORS.PLAYER : CONFIG.COLORS.AI;
+
                 this.ctx.beginPath();
-                this.ctx.strokeStyle = '#fff';
+                this.ctx.strokeStyle = attackColor;
                 this.ctx.lineWidth = 4 * (1 - progress);
                 this.ctx.setLineDash([5, 5]);
                 this.ctx.moveTo(anim.from.x, anim.from.y);
@@ -651,10 +957,11 @@ class Renderer {
                 this.ctx.stroke();
                 this.ctx.setLineDash([]);
 
-                // Particle at target
+                // Particle at target with attacker's color
                 this.ctx.beginPath();
                 this.ctx.arc(anim.to.x, anim.to.y, progress * 30, 0, Math.PI * 2);
-                this.ctx.fillStyle = "rgba(255, 255, 255, " + (1 - progress) + ")";
+                const rgb = attackColor === CONFIG.COLORS.PLAYER ? '0, 210, 255' : '255, 65, 108';
+                this.ctx.fillStyle = `rgba(${rgb}, ${1 - progress})`;
                 this.ctx.fill();
             } else if (anim.type === 'move') {
                 const curX = anim.from.x + (anim.to.x - anim.from.x) * progress;
@@ -663,6 +970,11 @@ class Renderer {
                 this.ctx.arc(curX, curY, 5, 0, Math.PI * 2);
                 this.ctx.fillStyle = CONFIG.COLORS.PLAYER;
                 this.ctx.fill();
+
+                // Create trail particles during movement
+                if (Math.random() < 0.3) {
+                    this.particleEngine.createSparkles(curX, curY, CONFIG.COLORS.PLAYER, 2);
+                }
             }
             anim.life--;
         });
@@ -674,29 +986,129 @@ class Renderer {
         document.getElementById('ai-territories').innerText = state.territories.filter(t => t.owner === 'ai').length;
         document.getElementById('reinforcement-count').innerText = state.reinforcementsAvailable;
         document.getElementById('reinforcement-panel').style.opacity = state.phase === 'reinforce' ? '1' : '0.3';
-        document.getElementById('game-log').innerHTML = state.logs.map(log => `<div class="log-entry">${log}</div>`).join('');
+
+        // AI Indicator
+        const aiIndicator = document.getElementById('ai-indicator');
+        if (state.currentPlayer === 'ai' && state.status === 'ongoing') {
+            aiIndicator.classList.remove('hidden');
+        } else {
+            aiIndicator.classList.add('hidden');
+        }
+
+        // Live game timer (updates every rendered frame)
+        const timerEl = document.getElementById('game-timer');
+        const timerContainer = document.getElementById('header-timer');
+        if (state.status === 'ongoing') {
+            const elapsed = Math.floor((Date.now() - state.statistics.game.startTime) / 1000);
+            const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const s = (elapsed % 60).toString().padStart(2, '0');
+            timerEl.textContent = `${m}:${s}`;
+            timerContainer.classList.remove('hidden');
+        } else if (state.statistics.game.endTime) {
+            const elapsed = Math.floor((state.statistics.game.endTime - state.statistics.game.startTime) / 1000);
+            const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const s = (elapsed % 60).toString().padStart(2, '0');
+            timerEl.textContent = `${m}:${s}`;
+        }
+
+        // Only update logs if they changed to prevent animation reset
+        const logEl = document.getElementById('game-log');
+        const newLogHtml = state.logs.map(log => `<div class="log-entry">${log}</div>`).join('');
+        if (logEl.innerHTML !== newLogHtml) {
+            logEl.innerHTML = newLogHtml;
+            // Scroll to bottom because newest logs are at the end
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Update Move History
+        const historyEl = document.getElementById('move-history');
+        if (state.moveHistory.length > 0) {
+            const historyHtml = state.moveHistory.slice().reverse().map(move => {
+                let icon, text, className;
+
+                if (move.type === 'conquest') {
+                    icon = '⚔️';
+                    className = 'conquest';
+                    text = `${move.player === 'player' ? 'Гравець' : 'ШІ'} захопив терит. ${move.target}`;
+                } else if (move.type === 'attack') {
+                    icon = move.result === 'failed' ? '🛡️' : '💥';
+                    className = 'attack';
+                    text = `${move.player === 'player' ? 'Гравець' : 'ШІ'} атакував ${move.target} (${move.result === 'failed' ? 'відбито' : 'пошкоджено'})`;
+                } else if (move.type === 'move') {
+                    icon = '➡️';
+                    className = 'move';
+                    text = `${move.player === 'player' ? 'Гравець' : 'ШІ'} перемістив ${move.units} військ`;
+                }
+
+                return `<div class="history-entry ${className}">
+                    <span class="history-icon">${icon}</span>
+                    <span>${text}</span>
+                </div>`;
+            }).join('');
+
+            historyEl.innerHTML = historyHtml;
+        } else {
+            historyEl.innerHTML = '<div class="history-empty">Історія ходів з\'явиться тут</div>';
+        }
 
         // Handle Game Over Screen
         const gameOverEl = document.getElementById('game-over');
         if (state.status !== 'ongoing') {
-            gameOverEl.classList.remove('hidden');
-            const title = document.getElementById('game-over-title');
-            const msg = document.getElementById('game-over-message');
-            if (state.status === 'won') {
-                title.innerText = "ПЕРЕМОГА!";
-                title.style.background = "linear-gradient(135deg, #00d2ff, #fff)";
-                title.style.webkitBackgroundClip = "text";
-                title.style.webkitTextFillColor = "transparent";
-                msg.innerText = "Ви захопили всі території!";
-            } else {
-                title.innerText = "ПОРАЗКА";
-                title.style.background = "linear-gradient(135deg, #ff416c, #fff)";
-                title.style.webkitBackgroundClip = "text";
-                title.style.webkitTextFillColor = "transparent";
-                msg.innerText = "ШІ здобув повний контроль.";
+            // Trigger victory confetti once
+            if (!this.confettiTriggered) {
+                this.particleEngine.createVictoryConfetti(0, 0, 150);
+                this.confettiTriggered = true;
+                state.statistics.game.endTime = Date.now();
             }
+
+            gameOverEl.classList.remove('hidden');
+
+            const isWon = state.status === 'won';
+            const card = gameOverEl.querySelector('.gameover-card');
+            const title = document.getElementById('game-over-title');
+            const badge = document.getElementById('gameover-winner-badge');
+            const subtitle = document.getElementById('gameover-subtitle');
+
+            // Determine winner's stats
+            const winnerKey = isWon ? 'player' : 'ai';
+            const winnerStats = state.statistics[winnerKey];
+            const total = state.territories.length;
+            const winnerTerritories = state.territories.filter(t => t.owner === winnerKey).length;
+
+            // Time
+            const elapsed = Math.floor((state.statistics.game.endTime - state.statistics.game.startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            const timeStr = minutes > 0 ? `${minutes}хв ${seconds}с` : `${seconds}с`;
+
+            // Success rate for the winner
+            const successRate = winnerStats.attacks > 0
+                ? Math.round((winnerStats.successfulAttacks / winnerStats.attacks) * 100)
+                : 0;
+
+            // Update card theme
+            card.classList.remove('player-win', 'ai-win');
+            card.classList.add(isWon ? 'player-win' : 'ai-win');
+
+            // Badge & title
+            badge.textContent = isWon ? '🏆' : '💀';
+            title.textContent = isWon ? 'ПЕРЕМОГА!' : 'ПОРАЗКА';
+            title.className = 'gameover-title' + (isWon ? '' : ' ai-win');
+
+            // Subtitle
+            subtitle.textContent = isWon
+                ? '🎉 Ви захопили весь світ!'
+                : '💔 ШІ встановив новий світовий порядок…';
+
+            // Stats
+            document.getElementById('go-territories-val').textContent = `${winnerTerritories} / ${total}`;
+            document.getElementById('go-turns-val').textContent = state.turn;
+            document.getElementById('go-time-val').textContent = timeStr;
+            document.getElementById('go-winrate-val').textContent = `${successRate}%`;
+
         } else {
             gameOverEl.classList.add('hidden');
+            this.confettiTriggered = false;
         }
     }
 }
@@ -722,13 +1134,34 @@ class App {
         this.resize();
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
 
-        document.getElementById('btn-start-game').onclick = () => this.startGame();
-        document.getElementById('btn-restart').onclick = () => this.startGame();
+        // Start game with selected difficulty
+        document.getElementById('btn-start-game').onclick = () => {
+            const selectedDifficulty = document.querySelector('input[name="difficulty"]:checked').value;
+            this.startGame(selectedDifficulty);
+        };
+
+        document.getElementById('btn-restart').onclick = () => {
+            const selectedDifficulty = this.currentDifficulty || 'normal';
+            this.startGame(selectedDifficulty);
+        };
 
         document.getElementById('btn-end-turn').onclick = () => {
-            if (this.engine.state.currentPlayer === 'player' && this.engine.state.status === 'ongoing') this.engine.nextTurn();
+            if (this.engine.state.currentPlayer === 'player' && this.engine.state.status === 'ongoing') {
+                this.engine.updateStatistics(); // Update stats before ending turn
+                this.engine.nextTurn();
+            }
         };
+
         document.getElementById('btn-new-game').onclick = () => this.showMenu();
+        document.getElementById('btn-go-menu').onclick = () => this.showMenu();
+
+        // History panel toggle
+        document.getElementById('history-toggle').onclick = () => {
+            const header = document.getElementById('history-toggle');
+            const container = document.getElementById('move-history');
+            header.classList.toggle('expanded');
+            container.classList.toggle('collapsed');
+        };
 
         // Troop dialog event listeners
         const slider = document.getElementById('troop-slider');
@@ -807,7 +1240,28 @@ class App {
         document.getElementById('slider-display').textContent = slider.value;
 
         // Show dialog
-        document.getElementById('troop-dialog').classList.remove('hidden');
+        const dialog = document.getElementById('troop-dialog');
+        dialog.classList.remove('hidden');
+
+        // Position dialog near the target hex
+        // We need to convert hex coordinates (internal) back to screen coordinates
+        const rect = this.canvas.getBoundingClientRect();
+        const screenX = target.x + this.renderer.camera.x + rect.left;
+        const screenY = target.y + this.renderer.camera.y + rect.top;
+
+        // Ensure dialog doesn't go off screen
+        const dialogWidth = dialog.offsetWidth || 280;
+        const dialogHeight = dialog.offsetHeight || 200;
+
+        let finalX = screenX + 30; // Offset a bit to the right
+        let finalY = screenY - 100; // Offset a bit up
+
+        if (finalX + dialogWidth > window.innerWidth) finalX = screenX - dialogWidth - 30;
+        if (finalY + dialogHeight > window.innerHeight) finalY = window.innerHeight - dialogHeight - 20;
+        if (finalY < 0) finalY = 20;
+
+        dialog.style.left = `${finalX}px`;
+        dialog.style.top = `${finalY}px`;
     }
 
     /**
@@ -837,13 +1291,15 @@ class App {
         this.hideTroopDialog();
     }
 
-    startGame() {
+    startGame(difficulty = 'normal') {
         this.gameState = 'active';
+        this.currentDifficulty = difficulty;
         document.getElementById('main-menu').classList.add('hidden');
         document.getElementById('game-over').classList.add('hidden');
-        this.engine = new GameEngine(); // Reset/New Engine on start
-        this.ai = new SimpleAI(this.engine);
+        this.engine = new GameEngine(difficulty); // Pass difficulty to engine
+        this.ai = new SimpleAI(this.engine, difficulty); // Pass difficulty to AI
         this.aiPlaying = false;
+        this.renderer.confettiTriggered = false; // Reset confetti flag
     }
 
     showMenu() {

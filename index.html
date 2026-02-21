@@ -19,22 +19,76 @@
             <div class="menu-content">
                 <h1 class="menu-title">HEXAGON STRATEGY</h1>
                 <p class="menu-subtitle">Захоплюйте території, перемагайте ШІ та станьте володарем світу!</p>
+
+                <!-- Difficulty Selector -->
+                <div class="difficulty-selector">
+                    <h3>Оберіть складність:</h3>
+                    <div class="difficulty-options">
+                        <label class="difficulty-option">
+                            <input type="radio" name="difficulty" value="easy">
+                            <span class="difficulty-badge easy">Легко</span>
+                            <small>ШІ робить помилки</small>
+                        </label>
+                        <label class="difficulty-option">
+                            <input type="radio" name="difficulty" value="normal" checked>
+                            <span class="difficulty-badge normal">Нормально</span>
+                            <small>Збалансована гра</small>
+                        </label>
+                        <label class="difficulty-option">
+                            <input type="radio" name="difficulty" value="hard">
+                            <span class="difficulty-badge hard">Важко</span>
+                            <small>Агресивний ШІ</small>
+                        </label>
+                        <label class="difficulty-option">
+                            <input type="radio" name="difficulty" value="expert">
+                            <span class="difficulty-badge expert">Експерт</span>
+                            <small>Майже ідеальний ШІ</small>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="menu-actions">
                     <button id="btn-start-game" class="btn btn-primary btn-large">Почати гру</button>
                 </div>
                 <div class="menu-footer">
-                    <p>Версія 1.1 - Hex Grid Refined</p>
+                    <p>Версія 1.2 - Enhanced Edition</p>
                 </div>
             </div>
         </div>
 
         <!-- Game Over Overlay -->
         <div id="game-over" class="menu-overlay hidden">
-            <div class="menu-content">
-                <h1 id="game-over-title" class="menu-title">КІНЕЦЬ ГРИ</h1>
-                <p id="game-over-message" class="menu-subtitle">Гра завершена.</p>
-                <div class="menu-actions">
-                    <button id="btn-restart" class="btn btn-primary btn-large">Грати знову</button>
+            <div class="gameover-card">
+                <div id="gameover-winner-badge" class="gameover-winner-badge"></div>
+                <h1 id="game-over-title" class="gameover-title">КІНЕЦЬ ГРИ</h1>
+                <p id="gameover-subtitle" class="gameover-subtitle"></p>
+
+                <div class="gameover-stats-grid">
+                    <div class="gameover-stat-box" id="go-territories">
+                        <div class="go-stat-icon">🗺️</div>
+                        <div class="go-stat-value" id="go-territories-val">—</div>
+                        <div class="go-stat-label">Клітин захоплено</div>
+                    </div>
+                    <div class="gameover-stat-box" id="go-turns">
+                        <div class="go-stat-icon">🔄</div>
+                        <div class="go-stat-value" id="go-turns-val">—</div>
+                        <div class="go-stat-label">Ходів пройшло</div>
+                    </div>
+                    <div class="gameover-stat-box" id="go-time">
+                        <div class="go-stat-icon">⏱️</div>
+                        <div class="go-stat-value" id="go-time-val">—</div>
+                        <div class="go-stat-label">Час катки</div>
+                    </div>
+                    <div class="gameover-stat-box" id="go-winrate">
+                        <div class="go-stat-icon">🎯</div>
+                        <div class="go-stat-value" id="go-winrate-val">—</div>
+                        <div class="go-stat-label">Успішних атак</div>
+                    </div>
+                </div>
+
+                <div class="gameover-actions">
+                    <button id="btn-restart" class="btn btn-primary btn-large">🎮 Грати знову</button>
+                    <button id="btn-go-menu" class="btn btn-secondary btn-large">🏠 Меню</button>
                 </div>
             </div>
         </div>
@@ -45,10 +99,43 @@
                 <div class="stat-item">Гравці: <span id="player-territories">0</span> | ШІ: <span
                         id="ai-territories">0</span></div>
             </div>
+            <div class="header-timer" id="header-timer">
+                <span class="timer-icon">⏱️</span>
+                <span id="game-timer">00:00</span>
+            </div>
             <div class="reinforcements" id="reinforcement-panel">
                 Доступно військ: <span id="reinforcement-count">0</span>
             </div>
         </header>
+
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Історія битв</h2>
+                <div id="ai-indicator" class="ai-indicator hidden">
+                    <div class="ai-pulse"></div>
+                    <span>ШІ думає...</span>
+                </div>
+            </div>
+            <div id="game-log" class="log-container">
+                <div class="log-entry">Ласкаво просимо до Hexagon Strategy!</div>
+            </div>
+
+            <!-- Move History Panel -->
+            <div class="history-panel">
+                <div class="history-header" id="history-toggle">
+                    <h3>Історія ходів</h3>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div id="move-history" class="history-container collapsed">
+                    <div class="history-empty">Історія ходів з'явиться тут</div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <button id="btn-end-turn" class="btn btn-warning btn-full">Завершити хід</button>
+                <button id="btn-new-game" class="btn btn-secondary btn-full">Нова гра</button>
+            </div>
+        </aside>
 
         <main class="game-container">
             <canvas id="game-canvas"></canvas>
@@ -81,16 +168,6 @@
                 </div>
             </div>
         </main>
-
-        <footer class="app-controls">
-            <div id="game-log" class="log-container">
-                <div class="log-entry">Ласкаво просимо до Hexagon Strategy!</div>
-            </div>
-            <div class="main-actions">
-                <button id="btn-end-turn" class="btn btn-warning">Завершити хід</button>
-                <button id="btn-new-game" class="btn btn-secondary">Нова гра</button>
-            </div>
-        </footer>
     </div>
 
     <!-- Portable Bundle -->

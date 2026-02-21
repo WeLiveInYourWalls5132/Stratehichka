@@ -1,40 +1,103 @@
-# Game Design Document: Hexagon Strategy Case (MVP)
+# Game Design Document: Hexagon Strategy (v1.2 — Enhanced Edition)
 
 ## 1. Overview
-A turn-based strategy game where the player competes against an AI to control a map of hexagonal territories. Inspired by Risk and Civilization.
+Покрокова стратегічна гра у браузері на гексагональній карті. Гравець змагається з ШІ за контроль над усіма територіями. Натхнення — Risk та Civilization.  
+**Платформа:** Web Browser (HTML5 Canvas, no frameworks).  
+**Версія:** 1.2 Enhanced Edition.
 
-## 2. Core Gameplay Mechanics
-- **Map:** 15-25 hexagonal territories.
-- **Territories:** Each territory has an owner (Player, AI, or Neutral) and a number of units (armies).
-- **Turns:** Turn-based gameplay. 
-    - Player Turn: Reinforce, Attack, Move, End Turn.
-    - AI Turn: Automated actions based on simple logic.
-- **Reinforcement:** At the start of each turn, the owner receives units based on the number of territories held (e.g., 1 unit per 3 territories, min 3).
-- **Attack:** 
-    - Selected territory must have > 1 unit.
-    - Can only attack adjacent territories.
-    - Dice-based combat: 
-        - Attacker rolls 1-3 dice (depending on army size).
-        - Defender rolls 1-2 dice (depending on army size).
-        - Highest rolls compared; defender loses unit if attacker roll is higher, otherwise attacker loses. (Classic Risk mechanic).
-- **Movement:** Move units between adjacent friendly territories (1 move per turn).
-- **Winning Condition:** Capture 100% of territories or reach a target number (e.g., 15 territories).
+---
 
-## 3. Visual Style
-- **UI:** Minimalist, clean.
-- **Colors:** 
-    - Player: Blue (#3498db)
-    - AI: Red (#e74c3c)
-    - Neutral: Gray (#95a5a6)
-- **Indicators:** Hexagons show the number of units in the center.
+## 2. Карта
 
-## 4. AI Behavior
-- **Priority:**
-    1. Capture neutral territories.
-    2. Attack weak player territories.
-    3. Reinforce borders.
-- **Aggression:** High if it has > 2x units of neighbor.
+- **Форма:** Гексагональна сітка з радіусом 3 (осьові координати), генерується автоматично.
+- **Кількість гексів:** 37 (фіксовано при radius=3).
+- **Стартове розташування:** Гравець — крайній лівий гекс; ШІ — крайній правий; решта — нейтральні.
+- **Одиниці на нейтральних:** 2–4 випадково.
+- **Стартові одиниці (гравець/ШІ):** 5.
 
-## 5. Metadata
-- **Platform:** Web Browser (Mobile responsive).
-- **Save State:** LocalStorage.
+---
+
+## 3. Фази ходу
+
+### Підкріплення (`reinforce`)
+- Кількість нових військ: `max(3, floor(owned_territories / 3))`.
+- Гравець кліком розподіляє одиниці по своїх гексах (1 клік = +1 одиниця).
+- Коли всі підкріплення витрачені — автоматичний перехід до фази атаки.
+
+### Атака / Переміщення (`attack`)
+- **Атака:** Вибрати свій гекс (>1 одиниці) → клік на сусідній ворожий.
+  - Бойова механіка: кидок d6 за кожну сторону. Атакуючий перемагає при `атак > захист`.
+  - При перемозі: переможений гекс переходить до атакуючого; атакуючий залишає 1 одиницю на старому місці.
+  - При поразці: атакуючий втрачає 1 одиницю.
+- **Переміщення:** Вибрати свій гекс → клік на сусідній свій → з'являється слайдер для вибору кількості (1 до units-1).
+- Гравець може виконувати необмежену кількість атак / переміщень за хід.
+
+### Кінець ходу
+- Гравець натискає «Завершити хід» → хід передається ШІ → після дій ШІ знову хід гравця.
+
+---
+
+## 4. Умови завершення
+- **Перемога:** Гравець захоплює ВСІ 37 гексів.
+- **Поразка:** ШІ захоплює ВСІ гекси або гравець залишається без територій.
+- Після завершення — екран з детальною статистикою.
+
+---
+
+## 5. ШІ — Human-Like AI
+
+### Рівні складності
+| Параметр | Легко | Нормально | Важко | Експерт |
+|----------|-------|-----------|-------|---------|
+| Агресія | 0.2 | 0.4 | 0.6 | 0.75 |
+| Ризик | 0.1 | 0.35 | 0.5 | 0.65 |
+| Фокус (точність) | 0.5 | 0.75 | 0.9 | 0.995 |
+| Терплячість | Так | Рандом | Ні | Ні |
+| Множник затримки | ×1.5 | ×1.0 | ×0.7 | ×0.3 |
+
+### Стратегії ШІ
+ШІ кожен хід обирає одну стратегію на основі балансу сил:
+- **expand** — початок гри або багато нейтральних → пріоритет нейтральних гексів
+- **defend** — ШІ слабший за гравця (<70% сили) → зміцнення кордонів
+- **aggress** — ШІ сильніший (>130%) або висока агресія → атака гравця
+
+### Пам'ять та "людськість"
+- Запам'ятовує звідки гравець атакував останнього разу.
+- Симулює «помилки» — іноді вибирає не найкращий варіант (залежно від `focusLevel`).
+- Симулює «втому» — менше дій наприкінці ходу (тільки не на Expert).
+- Варіативні паузи «розмірковування» (800±400мс на початку ходу, 400±300мс між діями).
+
+---
+
+## 6. Візуальний стиль
+
+### Кольорова палітра
+| Елемент | Колір |
+|---------|-------|
+| Фон | `#1a1c2c` |
+| Гравець | `#00d2ff` (neon blue) |
+| ШІ | `#ff416c` (crimson) |
+| Нейтральний | `#95a5a6` (slate) |
+| Вибір | `#f1c40f` (gold) |
+
+### Ефекти
+- **Частинки:** вибухи (30 частинок при атаці), сліди при переміщенні, конфетті (150 частинок) при перемозі.
+- **Flash:** білий спалах на задіяному гексі (fade 0.05/кадр).
+- **Пульсація:** вибраний гекс анімується через `sin(time*2)*2`.
+- **Лінія атаки:** штрихована лінія + expandingring у кольорі атакуючого.
+
+---
+
+## 7. Статистика (відображається на екрані завершення)
+
+Відстежується окремо для гравця та ШІ:
+- Кількість атак / успішних атак / % успішності
+- Кількість захоплених / втрачених територій
+- Максимальна армія за гру
+- Загальний час гри та кількість ходів
+- Складність та розмір карти
+
+---
+
+## 8. Збереження стану
+> ⚠️ Функція `localStorage` описана в старих специфікаціях, але **не реалізована** в поточній версії `game.js`. Стан не зберігається між сесіями.
