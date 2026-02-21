@@ -911,7 +911,7 @@ class Renderer {
 
         // Coordinates (q, r) - top part of hexagon
         this.ctx.fillStyle = '#000';
-        this.ctx.font = 'bold 12px sans-serif';
+        this.ctx.font = 'bold 12px Roboto';
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.shadowBlur = 2;
@@ -921,7 +921,7 @@ class Renderer {
 
         // Unit count - bottom part of hexagon
         this.ctx.fillStyle = '#fff';
-        this.ctx.font = 'bold 16px sans-serif';
+        this.ctx.font = 'bold 16px Roboto';
         this.ctx.shadowColor = 'rgba(0,0,0,0.8)';
         this.ctx.shadowBlur = 4;
         this.ctx.fillText(t.units, t.x, t.y + 14);
