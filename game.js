@@ -347,10 +347,11 @@ class GameEngine {
         const aiTerrs = this.state.territories.filter(t => t.owner === 'ai').length;
         const total = this.state.territories.length;
 
-        if (playerTerrs === total) {
+        // Player wins if AI is eliminated (0 territories) OR player has everything
+        if (aiTerrs === 0 || playerTerrs === total) {
             this.state.status = 'won';
-            this.log("ВІТАЄМО! Ви захопили весь світ!");
-        } else if (aiTerrs === total || playerTerrs === 0) {
+            this.log("ВІТАЄМО! Ви перемогли!");
+        } else if (playerTerrs === 0) {
             this.state.status = 'lost';
             this.log("ПОРАЗКА. ШІ встановив новий світовий порядок.");
         }
